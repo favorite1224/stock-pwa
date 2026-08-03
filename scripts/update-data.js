@@ -26,26 +26,46 @@ const STOCKS = [
 
 const MAOTAI_SECID = '1.600519';
 
-// ===== HTTP 请求 =====
-function fetchJson(url) {
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': 'https://quote.eastmoney.com/'
-      },
-      timeout: 15000
-    }, (res) => {
-      let data = '';
-      res.on('data', (chunk) => data += chunk);
-      res.on('end', () => {
-        try { resolve(JSON.parse(data)); }
-        catch (e) { reject(new Error('JSON parse failed: ' + data.substring(0, 200))); }
+// ===== HTTP 请求（带重试） =====
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function fetchJson(url, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const result = await new Promise((resolve, reject) => {
+        const req = https.get(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://quote.eastmoney.com/',
+            'Accept': 'application/json, text/plain, */*'
+          },
+          timeout: 15000
+        }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => data += chunk);
+          res.on('end', () => {
+            if (!data || data.trim() === '') {
+              reject(new Error('Empty response'));
+              return;
+            }
+            try { resolve(JSON.parse(data)); }
+            catch (e) { reject(new Error('JSON parse failed: ' + data.substring(0, 200))); }
+          });
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Request timeout')); });
       });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Request timeout')); });
-  });
+      return result;
+    } catch (e) {
+      if (i < retries - 1) {
+        const delay = (i + 1) * 2000; // 2s, 4s, 6s
+        console.log(`    Retry ${i + 1}/${retries - 1} after ${delay}ms...`);
+        await sleep(delay);
+      } else {
+        throw e;
+      }
+    }
+  }
 }
 
 // ===== 获取 K 线数据 =====
@@ -129,7 +149,7 @@ async function main() {
         }
       }
     }
-    await new Promise(r => setTimeout(r, 400)); // 限速
+    await sleep(1000); // 请求间隔 1 秒，避免被限流
   }
 
   // 收集所有日期并排序
