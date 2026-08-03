@@ -5,6 +5,11 @@ on:
     # 每个交易日（周一至周五）北京时间 15:05 = UTC 07:05
     - cron: '5 7 * * 1-5'
   workflow_dispatch: # 支持手动触发
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'data.js' # 避免bot自动提交data.js时重复触发
 
 permissions:
   contents: write
