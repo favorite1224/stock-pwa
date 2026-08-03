@@ -61,10 +61,15 @@ async function fetchKlines(secid, beg, end) {
 
 // ===== 获取茅台 PE TTM =====
 async function fetchPettm(secid) {
-  const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f55`;
+  // f162 = 市盈率(TTM)，同时请求 f57(代码) f58(名称) 用于验证
+  const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f57,f58,f162`;
   try {
     const res = await fetchJson(url);
-    return res.data ? res.data.f55 : null;
+    if (res.data && res.data.f162 !== undefined && res.data.f162 !== '-') {
+      const val = parseFloat(res.data.f162);
+      return isNaN(val) ? null : val;
+    }
+    return null;
   } catch (e) {
     console.warn('PE TTM fetch failed:', e.message);
     return null;
