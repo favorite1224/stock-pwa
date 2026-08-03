@@ -12,7 +12,7 @@ permissions:
   id-token: write
 
 jobs:
-  update:
+  update-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
@@ -45,19 +45,15 @@ jobs:
           git commit -m "data: update $(date -u +%Y-%m-%d)"
           git push
 
+      - name: 检出最新代码（含新数据）
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          clean: false
+
       - name: 清理标记文件
         if: always()
         run: rm -f .no-update
-
-  deploy:
-    needs: update
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
 
       - name: 设置 Pages
         uses: actions/configure-pages@v4
