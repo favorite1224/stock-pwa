@@ -1,6 +1,6 @@
 /**
  * A股 PWA 数据更新脚本
- * 从东方财富 API 抓取行情数据，生成 data.js
+ * 数据源：新浪财经 API（主） + 东方财富 API（备）
  * 在 GitHub Actions 中每日 15:05 (UTC+8) 自动运行
  */
 const https = require('https');
@@ -9,6 +9,7 @@ const path = require('path');
 
 // ===== 配置 =====
 const START_DATE = '20260622'; // 数据起始日期
+const SINA_DATALEN = 40; // 新浪 API 返回的 K 线条数
 
 const INDICES = [
   { code: 'sh000001', name: '上证指数', secid: '1.000001' },
@@ -29,28 +30,21 @@ const MAOTAI_SECID = '1.600519';
 // ===== HTTP 请求（带重试） =====
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-async function fetchJson(url, retries = 3) {
+async function fetchRaw(url, retries = 3, timeout = 10000) {
   for (let i = 0; i < retries; i++) {
     try {
       const result = await new Promise((resolve, reject) => {
         const req = https.get(url, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Referer': 'https://quote.eastmoney.com/',
+            'Referer': 'https://finance.sina.com.cn/',
             'Accept': 'application/json, text/plain, */*'
           },
-          timeout: 15000
+          timeout
         }, (res) => {
           let data = '';
           res.on('data', (chunk) => data += chunk);
-          res.on('end', () => {
-            if (!data || data.trim() === '') {
-              reject(new Error('Empty response'));
-              return;
-            }
-            try { resolve(JSON.parse(data)); }
-            catch (e) { reject(new Error('JSON parse failed: ' + data.substring(0, 200))); }
-          });
+          res.on('end', () => resolve(data));
         });
         req.on('error', reject);
         req.on('timeout', () => { req.destroy(); reject(new Error('Request timeout')); });
@@ -58,8 +52,7 @@ async function fetchJson(url, retries = 3) {
       return result;
     } catch (e) {
       if (i < retries - 1) {
-        const delay = (i + 1) * 2000; // 2s, 4s, 6s
-        console.log(`    Retry ${i + 1}/${retries - 1} after ${delay}ms...`);
+        const delay = (i + 1) * 1500;
         await sleep(delay);
       } else {
         throw e;
@@ -68,8 +61,24 @@ async function fetchJson(url, retries = 3) {
   }
 }
 
-// ===== 获取 K 线数据 =====
-async function fetchKlines(secid, beg, end) {
+async function fetchJson(url, retries = 3) {
+  const data = await fetchRaw(url, retries);
+  if (!data || data.trim() === '') throw new Error('Empty response');
+  return JSON.parse(data);
+}
+
+// ===== 新浪 K 线数据（主数据源） =====
+async function fetchKlinesSina(symbol) {
+  const url = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${symbol}&scale=240&ma=no&datalen=${SINA_DATALEN}`;
+  const data = await fetchJson(url);
+  if (!Array.isArray(data)) return [];
+  return data
+    .filter(item => item.day >= START_DATE.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))
+    .map(item => ({ date: item.day, close: parseFloat(item.close) }));
+}
+
+// ===== 东方财富 K 线数据（备选） =====
+async function fetchKlinesEastMoney(secid, beg, end) {
   const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&beg=${beg}&end=${end}`;
   const res = await fetchJson(url);
   if (!res.data || !res.data.klines) return [];
@@ -79,21 +88,39 @@ async function fetchKlines(secid, beg, end) {
   });
 }
 
+// ===== 获取 K 线数据（自动切换数据源） =====
+async function fetchKlines(item, beg, end) {
+  // 优先用新浪 API
+  try {
+    const klines = await fetchKlinesSina(item.code);
+    if (klines.length > 0) return { data: klines, source: 'sina' };
+  } catch (e) {
+    console.log(`    Sina failed: ${e.message}`);
+  }
+  // 备选：东方财富
+  try {
+    const klines = await fetchKlinesEastMoney(item.secid, beg, end);
+    if (klines.length > 0) return { data: klines, source: 'eastmoney' };
+  } catch (e) {
+    console.log(`    EastMoney failed: ${e.message}`);
+  }
+  return { data: [], source: 'none' };
+}
+
 // ===== 获取茅台 PE TTM =====
 async function fetchPettm(secid) {
-  // f162 = 市盈率(TTM)，同时请求 f57(代码) f58(名称) 用于验证
+  // 尝试东方财富 push2 API
   const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f57,f58,f162`;
   try {
-    const res = await fetchJson(url);
+    const res = await fetchJson(url, 2);
     if (res.data && res.data.f162 !== undefined && res.data.f162 !== '-') {
       const val = parseFloat(res.data.f162);
       return isNaN(val) ? null : val;
     }
-    return null;
   } catch (e) {
-    console.warn('PE TTM fetch failed:', e.message);
-    return null;
+    console.log('    PE TTM (EastMoney) failed:', e.message);
   }
+  return null;
 }
 
 // ===== 读取现有 data.js =====
@@ -132,12 +159,12 @@ async function main() {
   const klineData = {}; // code -> [{date, close}]
 
   for (const item of allEntries) {
-    try {
-      const klines = await fetchKlines(item.secid, START_DATE, end);
-      klineData[item.code] = klines;
-      console.log(`  ${item.name} (${item.code}): ${klines.length} records`);
-    } catch (e) {
-      console.error(`  ${item.name} (${item.code}) fetch failed: ${e.message}`);
+    const result = await fetchKlines(item, START_DATE, end);
+    if (result.data.length > 0) {
+      klineData[item.code] = result.data;
+      console.log(`  ${item.name} (${item.code}): ${result.data.length} records [${result.source}]`);
+    } else {
+      console.error(`  ${item.name} (${item.code}): all sources failed`);
       // 如果有旧数据，保留旧数据
       if (existing && existing.rawData) {
         const oldSrc = existing.rawData.indices[item.code] || existing.rawData.stocks[item.code];
@@ -149,7 +176,7 @@ async function main() {
         }
       }
     }
-    await sleep(1000); // 请求间隔 1 秒，避免被限流
+    await sleep(500); // 请求间隔
   }
 
   // 收集所有日期并排序
@@ -181,7 +208,6 @@ async function main() {
       } else if (lastClose != null) {
         result.push(lastClose);
       } else {
-        // 找该日期之后最近的收盘价
         const future = klines.find(k => k.date > d);
         result.push(future ? future.close : null);
       }
@@ -248,7 +274,6 @@ window.STOCK_RAW_DATA = ${JSON.stringify(rawData)};
     ? existing.rawData.dates.length : 0;
   if (oldLastDate === lastDate && oldCount === sortedDates.length) {
     console.log('\nNo new data since last update. Skipping commit.');
-    // 写入标记文件，供 workflow 判断
     fs.writeFileSync(path.join(__dirname, '..', '.no-update'), '');
   }
 }
