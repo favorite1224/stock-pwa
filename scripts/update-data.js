@@ -175,6 +175,7 @@ function readExistingData() {
   const content = fs.readFileSync(dataPath, 'utf8');
   const lockMatch = content.match(/window\.STOCK_LOCK_COUNT\s*=\s*(\d+)/);
   const dateMatch = content.match(/window\.STOCK_LAST_UPDATE\s*=\s*"([^"]+)"/);
+  const peMatch = content.match(/window\.STOCK_MAOTAI_PETTM\s*=\s*(null|[\d.]+)/);
   const rawMatch = content.match(/window\.STOCK_RAW_DATA\s*=\s*(\{[\s\S]*\})/);
   let rawData = null;
   if (rawMatch) {
@@ -183,6 +184,7 @@ function readExistingData() {
   return {
     lockCount: lockMatch ? parseInt(lockMatch[1]) : 0,
     lastDate: dateMatch ? dateMatch[1] : null,
+    pettm: peMatch ? (peMatch[1] === 'null' ? null : parseFloat(peMatch[1])) : null,
     rawData
   };
 }
@@ -335,9 +337,13 @@ window.STOCK_RAW_DATA = ${JSON.stringify(rawData)};
     ? existing.rawData.dates[existing.rawData.dates.length - 1] : null;
   const oldCount = existing && existing.rawData && existing.rawData.dates
     ? existing.rawData.dates.length : 0;
-  if (oldLastDate === lastDate && oldCount === sortedDates.length) {
+  const oldPettm = existing ? existing.pettm : null;
+  const pettmChanged = (oldPettm !== pettm);
+  if (oldLastDate === lastDate && oldCount === sortedDates.length && !pettmChanged) {
     console.log('\nNo new data since last update. Skipping commit.');
     fs.writeFileSync(path.join(__dirname, '..', '.no-update'), '');
+  } else if (pettmChanged) {
+    console.log(`\nPE TTM changed: ${oldPettm} -> ${pettm}, will commit.`);
   }
 }
 
