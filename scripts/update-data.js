@@ -131,13 +131,36 @@ async function fetchRealtimeQuotes(codes) {
 
 // ===== 获取茅台 PE TTM =====
 async function fetchPettm(secid) {
-  // 尝试东方财富 push2 API
-  const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f57,f58,f162`;
+  // 方案1：腾讯财经实时行情（qt.gtimg.cn），field[39] = 市盈率
+  // 腾讯API返回GBK编码，但~分隔符是ASCII安全字符，split不受影响
   try {
-    const res = await fetchJson(url, 2);
+    const parts = secid.split('.');
+    const prefix = parts[0] === '1' ? 'sh' : 'sz';
+    const tencentCode = prefix + parts[1];
+    const url = `https://qt.gtimg.cn/q=${tencentCode}`;
+    const text = await fetchRaw(url, 2);
+    const match = text.match(/"([^"]+)"/);
+    if (match) {
+      const fields = match[1].split('~');
+      if (fields.length > 39) {
+        const val = parseFloat(fields[39]);
+        if (!isNaN(val) && val > 0) {
+          console.log(`    PE from Tencent: ${val}`);
+          return val;
+        }
+      }
+    }
+  } catch (e) {
+    console.log('    PE TTM (Tencent) failed:', e.message);
+  }
+
+  // 方案2：东方财富 push2 API（备选，GitHub Actions可能被屏蔽）
+  const emUrl = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f57,f58,f162`;
+  try {
+    const res = await fetchJson(emUrl, 2);
     if (res.data && res.data.f162 !== undefined && res.data.f162 !== '-') {
       const val = parseFloat(res.data.f162);
-      return isNaN(val) ? null : val;
+      if (!isNaN(val)) return val;
     }
   } catch (e) {
     console.log('    PE TTM (EastMoney) failed:', e.message);
