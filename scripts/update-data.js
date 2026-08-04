@@ -107,6 +107,28 @@ async function fetchKlines(item, beg, end) {
   return { data: [], source: 'none' };
 }
 
+// ===== 新浪实时行情（补充当日收盘数据，K线API收盘后可能有延迟） =====
+async function fetchRealtimeQuotes(codes) {
+  const url = `https://hq.sinajs.cn/list=${codes.join(',')}`;
+  const text = await fetchRaw(url);
+  const quotes = {};
+  const regex = /var hq_str_(\w+)="([^"]+)"/g;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const code = match[1];
+    const fields = match[2].split(',');
+    if (fields.length >= 32) {
+      const close = parseFloat(fields[3]);
+      const date = fields[30];
+      const time = fields[31];
+      if (close > 0 && date) {
+        quotes[code] = { close, date, time };
+      }
+    }
+  }
+  return quotes;
+}
+
 // ===== 获取茅台 PE TTM =====
 async function fetchPettm(secid) {
   // 尝试东方财富 push2 API
@@ -177,6 +199,24 @@ async function main() {
       }
     }
     await sleep(500); // 请求间隔
+  }
+
+  // 用实时行情补充当日收盘数据（K线API收盘后可能延迟发布）
+  const allCodes = allEntries.map(e => e.code);
+  try {
+    const rtQuotes = await fetchRealtimeQuotes(allCodes);
+    for (const item of allEntries) {
+      const rt = rtQuotes[item.code];
+      if (rt && klineData[item.code] && klineData[item.code].length > 0) {
+        const lastKlineDate = klineData[item.code][klineData[item.code].length - 1].date;
+        if (rt.date > lastKlineDate && rt.close > 0) {
+          klineData[item.code].push({ date: rt.date, close: rt.close });
+          console.log(`  ${item.name}: appended realtime quote for ${rt.date} (close: ${rt.close})`);
+        }
+      }
+    }
+  } catch (e) {
+    console.log('Realtime quote fetch failed:', e.message);
   }
 
   // 收集所有日期并排序
