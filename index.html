@@ -555,7 +555,6 @@ const portfolio = [
 
 // 估值标的
 const valuationStocks = [
-  { code: "sh600519", name: "贵州茅台" },
   { code: "sh600995", name: "南网储能" },
   { code: "sh600570", name: "恒生电子" },
   { code: "sh601888", name: "中国中免" },
@@ -564,8 +563,6 @@ const valuationStocks = [
 // 估值价位配置（待用户提供具体数字）
 const valuationConfig = {};
 var currentValTab = valuationStocks[0].code;
-// 贵州茅台 PETTM（市盈率TTM），由 GitHub Actions 每日从行情接口获取更新
-var maotaiPetym = window.STOCK_MAOTAI_PETTM || 20.41;
 // 红利低波ETF(515080) 4档价位（从大到小）
 var etfPrices = [1.685, 1.648, 1.575, 1.517];
 // 乾卦五爻价位（从大到小 P1>P2>P3>P4>P5），按收盘价所处区间显示对应爻辞
@@ -845,19 +842,6 @@ function renderValContent() {
     var rng = getRangePct(closes);
     var cls = chg >= 0 ? 'up' : 'down';
     var sign = chg >= 0 ? '+' : '';
-
-    // 贵州茅台：仅对比 PETTM
-    if (stock.code === 'sh600519') {
-      var pe = maotaiPetym;
-      var verdict = (typeof pe === 'number' && pe >= 30) ? '送君千里，终须一别' : '踏踏实实';
-      var vCls = (typeof pe === 'number' && pe >= 30) ? 'warn' : 'safe';
-      document.getElementById('valContent').innerHTML =
-        '<div class="val-card">' +
-          '<div class="val-pettm-row"><span class="val-pettm-label">市盈率TTM</span><span class="val-pettm-value">' + fmt(pe) + '</span></div>' +
-          '<div class="val-verdict ' + vCls + '">' + verdict + '</div>' +
-        '</div>';
-      return;
-    }
 
     // 红利低波ETF(515080)：4档价位估值
     if (stock.code === 'sh515080') {
