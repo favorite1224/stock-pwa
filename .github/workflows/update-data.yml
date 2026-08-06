@@ -12,9 +12,11 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
-  update-data:
+  update-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
@@ -50,3 +52,15 @@ jobs:
       - name: 清理标记文件
         if: always()
         run: rm -f .no-update
+
+      - name: 设置 Pages
+        uses: actions/configure-pages@v4
+
+      - name: 上传静态文件
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: 部署到 GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
