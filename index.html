@@ -634,7 +634,7 @@ function renderStats() {
     var cards = [
       { label: "上证指数", value: fmt(sh[lastIdx]), chg: shChg, sub: "区间 " + (shRng>=0?"+":"") + fmt(shRng) + "%" },
       { label: "沪深300", value: fmt(hs[lastIdx]), chg: hsChg, sub: "区间 " + (hsRng>=0?"+":"") + fmt(hsRng) + "%" },
-      { label: "持仓组合", value: "厚德载物", chg: portChg, sub: "区间 " + (portRng>=0?"+":"") + fmt(portRng) + "%" },
+      { label: "持仓组合", value: portChg>=0?"厚德载物":"自强不息", chg: portChg, sub: "区间 " + (portRng>=0?"+":"") + fmt(portRng) + "%" },
       { label: "最新日期", value: rawData.dates[lastIdx], chg: null, sub: "共 " + rawData.dates.length + " 个交易日" }
     ];
     document.getElementById('statsRow').innerHTML = cards.map(function(c) {
