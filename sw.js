@@ -1,4 +1,4 @@
-const CACHE = 'portfolio-v22';
+const CACHE = 'portfolio-v23';
 const BASE = self.registration ? self.registration.scope : '/';
 const rel = p => BASE + p;
 const ASSETS = [
