@@ -17,15 +17,13 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: data-update
   cancel-in-progress: false
 
 jobs:
-  update-and-deploy:
+  update-data:
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
@@ -62,14 +60,5 @@ jobs:
         if: always()
         run: rm -f .no-update
 
-      - name: 设置 Pages
-        uses: actions/configure-pages@v4
-
-      - name: 上传静态文件
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: '.'
-
-      - name: 部署到 GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      # 说明：Pages 已切换为 branch 构建（main / root），
+      # 推送 data.js 后由 GitHub Pages 自动发布，不再走 upload/deploy-pages 工件流程。
